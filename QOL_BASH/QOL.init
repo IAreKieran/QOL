@@ -1,0 +1,4 @@
+#relative_filepath_(QOL)|host_directory_(can_include_~)_(leave_blank_to_link_directly_to_QOL_path
+shells/bash/.bash_functions|~/test/
+.testrc|/
+private/.gitrc|~/

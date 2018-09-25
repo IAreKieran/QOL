@@ -1,0 +1,126 @@
+detect_shell()
+{
+linked_shell=$(basename "$(readlink /proc/$$/exe)")
+
+# Doesn't work for fish
+case $linked_shell in
+  sh)
+    CUR_SHELL='sh'
+    ;;
+  bash)
+    CUR_SHELL='bash'
+    ;;
+  ash|busybox)
+    CUR_SHELL='ash'
+    ;;
+  dash)
+    CUR_SHELL='dash'
+    ;;
+  ksh*)
+    CUR_SHELL=$linked_shell
+    ;;
+  zsh)
+    CUR_SHELL='zsh'
+    ;;
+  fish)
+    CUR_SHELL='fish'
+    ;;
+  *)
+    CUR_SHELL="Unknown Shell $linked_shell"
+    ;;
+esac
+
+echo $CUR_SHELL
+}
+
+formatting_variables()
+{
+  # Formatting variables
+  NORMAL=$(printf '\033[0m')
+  BLACK=$(printf '\033[30;1m')
+  RED=$(printf '\033[31;1m')
+  GREEN=$(printf '\033[32;1m')
+  YELLOW=$(printf '\033[33;1m')
+  BLUE=$(printf '\033[34;1m')
+  MAGENTA=$(printf '\033[35;1m')
+  CYAN=$(printf '\033[36;1m')
+  WHITE=$(printf '\033[37;1m')
+  UNDERLINE=$(printf '\033[21;1m')
+}
+
+QOL_filename()
+{
+  echo ${1##*/}
+}
+
+QOL_dirname()
+{
+  dirname=${1%/*}
+
+  if [ -z "$dirname" ]; then
+    # Blank expansion indicates root directory
+    dirname=/
+  fi
+  
+  echo $dirname
+  unset dirname
+}
+
+contains() {
+    string="$1"
+    substring="$2"
+    if test "${string#*$substring}" != "$string"
+    then
+        return 0    # $substring is in $string
+    else
+        return 1    # $substring is not in $string
+    fi
+    unset string
+    unset substring
+}
+
+# Removes all instances of line $1 in file $2
+QOL_remove_line()
+{
+  cmd=$1
+
+  # busybox sed doesn't have --posix flag
+  if [ "$(basename $(readlink $(which sed) || echo $(which sed)))" = 'busybox' ]; then
+    cmd=$(echo $cmd | sed -E 's/\//\\\//g') # replace all occurences of / with \/
+    cmd=$(echo $cmd | sed -E 's/~/\\~/') # replace first occurence of ~ with \~
+    cmd=$(echo $cmd | sed -E 's/ /\\s/g') # replace all occurences of a space character with \s
+    cmd="/^$cmd$/d"
+
+    sed -i -E $cmd $2
+  else
+    #echo "using normal sed - shell_functions:remove_line"
+    cmd=$(echo $cmd | sed --posix -E 's/\//\\\//g') # replace all occurences of / with \/
+    #echo "2 $cmd"
+    cmd=$(echo $cmd | sed --posix -E 's/~/\\~/') # replace first occurence of ~ with \~
+    cmd=$(echo $cmd | sed --posix -E 's/\./\\\./g') # replace all occurences of . with \.
+
+    sed --posix -i -E "/^$cmd$/d" $2
+
+  fi
+
+  unset cmd
+}
+
+QOL_parse_string()
+{
+  delimiter=$1
+  shift
+  string=$@
+
+  echo $string | awk '
+  { 
+    split($0, variables, "'$delimiter'")
+    for (i=1; i <= length(variables); i++) {
+      printf("%s\n", variables[i])
+    }
+  }'
+
+}
+
+git_branch()
+{ git branch 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/\1/'; }

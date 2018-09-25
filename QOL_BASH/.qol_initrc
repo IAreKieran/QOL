@@ -1,0 +1,347 @@
+# Wrap function calls in this so that QOL_debug has function stack
+#$1 is function, rest are args
+QOL_debug_wrapper()
+{
+    #echo "[1] $QOL_init_function_stack | $1"
+    QOL_init_update_function_stack "$1"
+    #echo "[2] $QOL_init_function_stack | $1"
+    "$@"
+    ret=$?
+    if [ $ret -eq 0 ]
+    then
+        #echo "Successfully ran [ $@ ]"
+        :
+    else
+        echo "Error: Command [ $@ ] returned $ret"
+        #exit $ret
+    fi
+
+    QOL_init_update_function_stack "$1"
+    #echo "[3] $QOL_init_function_stack | $1"
+}
+
+# Invoke with QOL_debug "thing to say" debug_level
+# Level 1 for light info, 10 for _everything_
+QOL_debug()
+{
+  #$1 is comment
+  #$2 is QOL init debug level (if blank, always show) (edit. mandatory for now)
+  #$3 is $LINENO, always supplied (manually for now)
+
+  # If debug level isn't high enough, just exit
+  if [ ! -z $QOL_INIT_DEBUG ]; then
+    if ! ([ -z $2 ] || [ "$QOL_INIT_DEBUG" -ge "$2" ]); then
+      return
+    fi
+
+    debug_level=$([ ! -z $2 ] && echo $2 || echo 'default')
+    function_stack=$QOL_init_function_stack
+    lineNo=$3
+
+    # Will need to turn this off when testing PS1s
+    formatting_variables
+    debug_level=$RED$debug_level$NORMAL
+    function_stack=$BLUE$function_stack$NORMAL
+    lineNo=$GREEN$lineNo$NORMAL
+
+    message_prefix="$debug_level $function_stack:$lineNo"
+    #echo $2
+    echo "$message_prefix $1"
+
+    unset debug_level
+    unset function_stack
+    unset message_prefix
+    unset lineNo
+  fi
+}
+
+# Keeps track of QOL_INIT_function_stack
+# If the new function is not already on the end, append it
+# Else, remove it 
+# in the form "A:B:C"
+QOL_init_update_function_stack()
+{
+  append=$1
+  string=$QOL_init_function_stack
+
+  #echo "current stack| $string"
+
+  if [ -z "$append" ]; then
+    #echo "INVALID ARGUMENT: string to append is empty"
+    :
+  elif [ -z "$string" ]; then
+    #echo "arg 1 is empty: $string | $append"
+    new_function_stack=$append
+  elif [ "$string" = "$append" ]; then
+    #echo "args are the same: $string | $append"
+    unset new_function_stack
+  else
+    #echo "args are different: $string | $append"
+    last_append=$(echo $string | sed -E 's/^(.*)\://')
+    ## TODO add a --posix flag for appropriate versions of sed
+
+    if [ "$last_append" = "$append" ]; then
+      #echo "stack pop is equal to append"
+      tmp=$(QOL_parse_pop $string $append)
+      new_function_stack=$(QOL_parse_pop $tmp ":")
+    else
+      #echo "stack pop is not equal to append"
+      new_function_stack="$string:$append"
+    fi
+  fi
+  #echo "function_stack| setting $QOL_init_function_stack --> $new_function_stack"
+  QOL_init_function_stack="$new_function_stack"
+  #echo $QOL_init_function_stack
+}
+
+# Removes last occurance of $2 from $1
+# Used to keep track of the QOL_init_function_stack
+# careful echoing out from here, will interfere with result
+QOL_parse_pop()
+{
+  string=$1
+  cmd=$2
+  # 1 replace all occurences of / with \/
+  # 2 replace first occurence of ~ with \~
+  # 3 replace all occurences of . with \. 
+  # 4 replace all occurences of : with \: 
+
+  # busybox sed doesn't support --posix flag
+  if [ "$(basename $(readlink $(which sed) || echo $(which sed)))" = 'busybox' ]; then
+    #echo "using busybox sed yet"
+    cmd=$(echo $cmd | sed -E 's/\//\\\//g') # 1
+    cmd=$(echo $cmd | sed -E 's/~/\\~/') # 2
+    cmd=$(echo $cmd | sed -E 's/\./\\\./g') # 3
+    cmd=$(echo $cmd | sed -E 's/\:/\\\:/g') # 4
+    cmd="s/$cmd$//"
+
+    string=$(echo $string | sed -E $cmd)
+  else
+    #echo "using normal sed"
+    cmd=$(echo $cmd | sed --posix -E 's/\//\\\//g') # 1
+    cmd=$(echo $cmd | sed --posix -E 's/~/\\~/') # 2
+    cmd=$(echo $cmd | sed --posix -E 's/\./\\\./g') # 3
+    cmd=$(echo $cmd | sed --posix -E 's/\:/\\\:/g') # 4
+    cmd="s/$cmd$//"
+
+    string=$(echo $string | sed --posix -E $cmd)
+  fi
+  echo $string
+
+  unset cmd
+
+}
+
+# Removes & initialises tmp files generated from init
+QOL_init_tmp_cleanup()
+{
+  function_debug_level=9
+  
+  # Remove tmp files
+  QOL_debug "Removing temp files..." $function_debug_level $LINENO
+  rm -f "$QOL_BASH_DIR/existing_files.txt" "$QOL_BASH_DIR/existing_links.txt" "$QOL_BASH_DIR/linked.txt" "$QOL_BASH_DIR/.bashrc_suffix" "$QOL_BASH_DIR/profile_suffix"
+
+  # Initialise tmp files
+  printf "# Format\n#\n" > $QOL_BASH_DIR/existing_files.txt
+
+  printf "# Format\n# <new dotfile filepath on host>=<filepath of file host dotfile initially linked to>\n" > "$QOL_BASH_DIR/existing_links.txt"
+}
+
+# Takes lines from QOL.init, does everything to do with installing them
+# Takes backups if required, sets up links, makes tmpfiles
+# Calls shell_functions:QOL_dirname, filename
+#TODO clean this fucker up
+QOL_init_install()
+{
+  function_debug_level=6
+
+  QOL_file_path="$(echo $1 | cut -d'|' -f1)"
+  host_link_dir="$(echo $1 | cut -d'|' -f2)"
+
+  file=$(QOL_filename $QOL_file_path)
+  host_link_path=$host_link_dir$file
+
+  # busybox sed doesn't have --posix flag
+  if [ "$(basename $(readlink $(which sed) || echo $(which sed)))" = 'busybox' ]; then
+    QOL_debug "Using busybox sed" $function_debug_level $LINENO
+    formatted_home=$(echo $HOME | sed -E 's/\//\\\//g')
+    expanded_host_link_path=$(echo $host_link_path | sed -E 's/~/'$formatted_home'/')
+  else
+    QOL_debug "Using normal sed" $function_debug_level $LINENO
+    formatted_home=$(echo $HOME | sed --posix -E 's/\//\\\//g')
+    expanded_host_link_path=$(echo $host_link_path | sed --posix -E 's/~/'$formatted_home'/')
+  fi
+  # Check where (if existing and/or linked) the target path is currently linked to
+  existing_linked_to=$(readlink -- "$expanded_host_link_path")
+
+  if [ -z $host_link_dir ]; then
+    cmd='$QOL_BASH_DIR/'$QOL_file_path
+    msg="$file using QOL file $QOL_BASH_DIR/$QOL_file_path"
+  else
+
+    msg=" linked to $PROJECT_DIR/$QOL_file_path"
+
+    if [ "$existing_linked_to" = "$QOL_BASH_DIR/$QOL_file_path" ]; then
+      msg=" already linked to $PROJECT_DIR$QOL_file_path"
+
+    elif [ ! -z "$existing_linked_to" ]; then
+      msg=" exists, but linked to different file $existing_linked_to backing up"
+      existing_file_name=$(QOL_filename $existing_linked_to)
+      existing_link_name=$(QOL_dirname $existing_linked_to)
+
+      echo "$host_link_path=$existing_linked_to" >> "$QOL_BASH_DIR/existing_links.txt"
+      cp $existing_linked_to "$QOL_BASH_DIR/backups/"$existing_file_name"_"$datetimestamp
+      # ^Should probably name this after the original linked filename, not what is linked to it
+
+    elif [ -f "$expanded_host_link_path" ]; then
+      msg=" file already exists, taking backup of $expanded_host_link_path"
+
+      datetimestamp=`date '+%Y_%m_%d_%H:%M:%S'`
+      link_name=$existing_linked_to #TODO get linked filename for backups
+      cp $host_link_path "$QOL_BASH_DIR/backups/"$file"_"$datetimestamp
+      echo $file >> "$QOL_BASH_DIR/existing_files.txt"
+    fi
+
+    if test -d $expanded_host_link_path; then
+      echo "Unable to link $expanded_host_link_path because it's an existing directory"
+      return
+    fi
+
+    mkdir -p `QOL_dirname $expanded_host_link_path`
+    rm -f "$expanded_host_link_path" # This is slightly less dangerous, need a better way to sort this out. Only remove if file, otherwise warn user and exit with failure
+    ln -s "$QOL_BASH_DIR/$QOL_file_path" "$expanded_host_link_path"
+    echo $file >> "$QOL_BASH_DIR/linked.txt"
+
+    msg="$host_link_path $msg"
+    cmd=$host_link_path
+  fi
+  
+  printf ". $cmd\n" >> $QOL_BASH_DIR/.bashrc_suffix
+  echo $msg
+}
+
+# Takes a string naming a variable and a file
+# Replaces all instances of 'export variable_name=variable_value' toa single one at the end of file (indempotent)
+# Calls shell_functions:QOL_remove_line
+QOL_insert_export_variables()
+{
+  function_debug_level=8
+
+  # Get variable name as string, and variable value
+  var_text=$1
+  eval "var_value=\$$var_text"
+
+  # Remove all occurences of line from file, then append once
+  line="export $var_text=$var_value"
+  QOL_debug "Replacing $line in $2" $function_debug_level $LINENO
+  QOL_debug_wrapper QOL_remove_line "$line" $2
+  printf "$line\n" >> $2
+
+  # If "ENV" variable, also add a line to source it
+  if [ $var_text = "ENV" ]; then
+    QOL_debug "Replacing . $var_value in $2" $function_debug_level $LINENO
+    QOL_debug_wrapper QOL_remove_line ". $var_value" $2
+    printf ". $var_value\n" >> $2
+  fi
+
+  unset var_text
+  unset var_value
+  unset line
+}
+
+
+# Replacing line that sources a suffix file to base file (indempotent)
+# Also creates a link in the base file directory for the suffix file that links to the QOL dir
+# Calls shell_functions:QOL_remove_line
+QOL_suffix_append()
+{
+  function_debug_level=8
+
+  base=$1
+  suffix=$1"_suffix"
+
+  # busybox sed doesn't have --posix flag
+  if [ "$(basename $(readlink $(which sed) || echo $(which sed)))" = 'busybox' ]; then
+    QOL_debug "Using busybox sed" $function_debug_level $LINENO
+    formatted_home=$(echo $HOME | sed -E 's/\//\\\//g')
+    expanded_base=$(echo $1 | sed -E 's/~/'$formatted_home'/')
+    expanded_suffix=$(echo $suffix | sed -E 's/~/'$formatted_home'/')
+  else
+    QOL_debug "Using normal sed" $function_debug_level $LINENO
+    formatted_home=$(echo $HOME | sed --posix -E 's/\//\\\//g')
+    expanded_base=$(echo $1 | sed --posix -E 's/~/'$formatted_home'/')
+    expanded_suffix=$(echo $suffix | sed --posix -E 's/~/'$formatted_home'/')
+  fi
+
+  # Create base if required
+  if [ ! -f $expanded_base ]; then
+    touch $expanded_base
+  fi
+
+  # Link host suffix to project suffix
+  tmpfile=`QOL_filename $suffix`
+  QOL_debug "Linking hosts $expanded_suffix to QOL $QOL_BASH_DIR/$tmpfile" $function_debug_level $LINENO
+  rm -f $expanded_suffix
+  ln -s "$QOL_BASH_DIR/$tmpfile" $expanded_suffix
+
+  # Ensure suffix is only appended to base once
+  QOL_debug_wrapper QOL_remove_line ". $suffix" $expanded_base
+  printf ". $suffix\n" >> $expanded_base
+
+  unset base
+  unset suffix
+  unset expanded_base
+  unset expanded_suffix
+  unset tmpfile
+}
+
+# Entire function for creating suffix files & appending them
+# Calls suffix_insert_export_variables, init_install, suffix_append
+QOL_suffix_init()
+{
+  function_debug_level=5
+
+  delimiter=$1
+
+  QOL_debug "Replacing export variables in suffix files" $function_debug_level $LINENO
+  for suffix_name in $(QOL_parse_string $delimiter $host_suffix_files)
+  do
+    suffix_name=$(QOL_filename $suffix_name)'_suffix'
+    for variable_name in $(QOL_parse_string $delimiter $QOL_BASH_VARIABLES)
+    do
+      # Create base if required
+      expanded_suffix_path=$QOL_BASH_DIR/$suffix_name
+      if [ ! -f $expanded_suffix_path ]; then
+        touch $expanded_suffix_path
+      fi
+
+      QOL_debug_wrapper QOL_insert_export_variables $variable_name $expanded_suffix_path
+    done
+  done
+
+  # Install QOL.init files to .bashrc only, for the moment
+  QOL_debug "Parsing QOL.init " $function_debug_level $LINENO
+  for line in $(cat "$QOL_BASH_DIR/QOL.init"); do
+    #if [[ ${line:0:1} != '#' ]]; then
+    if [ "$(printf %.1s $line)" != '#' ]; then
+      QOL_debug_wrapper QOL_init_install $line ".bashrc"
+    fi
+  done
+
+  # Append suffixes
+  QOL_debug "Appending suffix files..." $function_debug_level $LINENO
+  for base in $(QOL_parse_string $delimiter $host_suffix_files)
+  do
+    QOL_debug_wrapper QOL_suffix_append $base
+  done
+
+  unset QOL_BASH_VARIABLES
+  unset host_suffix_files
+
+  unset suffix_name
+  unset variable_name
+  unset expanded_suffix_path
+
+  unset line
+  unset base
+}

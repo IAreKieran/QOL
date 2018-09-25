@@ -1,0 +1,16 @@
+# Being sourced from
+# /etc/profile_suffix for login interactive bash & ssh shells
+# .bashrc_suffix for non-login interactive bash & ssh shells
+# $ENV for all interactive sh (set in /etc/profile)
+
+case $- in
+    *i*)
+    #printf '"%s" is in "%s"\n' "i" "$-"
+    ;;
+      *)
+    #printf '"%s" is not in "%s"\n' "i" "$-"
+    return;;
+esac
+
+. $QOL_BASH_DIR/shells/shell/.shell_functions
+. $QOL_BASH_DIR/shells/shell/.shell_PS1

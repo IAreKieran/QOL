@@ -1,0 +1,83 @@
+#!/bin/sh
+# Not compatible with zsh, fish
+
+. $QOL_BASH_DIR/shells/shell/.shell_functions
+
+
+# Pre-formatted strings of text to be used in PS1
+CUR_SHELL=$(detect_shell)
+PS_SSH="ssh"
+PS_DOCKER="docker"
+PS_SHELL=$CUR_SHELL
+PS_HOST=`hostname -f`
+PS_USER=$(id -u -n)
+
+# Formatting variables
+NORMAL=$(printf '\033[0m')
+BLACK=$(printf '\033[30;1m')
+RED=$(printf '\033[31;31m')
+GREEN=$(printf '\033[32;32m')
+YELLOW=$(printf '\033[33;1m')
+BLUE=$(printf '\033[34;34m')
+MAGENTA=$(printf '\033[35;1m')
+CYAN=$(printf '\033[36;36m')
+WHITE=$(printf '\033[37;1m')
+
+UNDERLINE=$(printf '\033[21;1m')
+
+if [ -n "$SSH_CLIENT" ] || [ -n "$SSH_TTY" ]; then
+  SSH_SESSION="true"
+fi
+
+contains $CUR_SHELL 'bash' && . $QOL_BASH_DIR/shells/bash/.bash_PS1 && return 0
+
+# Fixes ash formatting issues
+# dash and ksh do _not_ like this
+case $CUR_SHELL in
+    dash)
+    ;;
+    ksh*)
+    ;;
+      *)
+    NORMAL="\[$NORMAL\]"
+    BLACK="\[$BLACK\]"
+    RED="\[$RED\]"
+    GREEN="\[$GREEN\]"
+    YELLOW="\[$YELLOW\]"
+    BLUE="\[$BLUE\]"
+    MAGENTA="\[$MAGENTA\]"
+    CYAN="\[$CYAN\]"
+    WHITE="\[$WHITE\]"
+    UNDERLINE="\[$UNDERLINE\]"
+    ;;
+esac
+
+PS_SSH=${UNDERLINE}${PS_SSH}${NORMAL}
+PS_DOCKER=${MAGENTA}${PS_DOCKER}${NORMAL}
+PS_SHELL=${RED}${PS_SHELL}${NORMAL}
+PS_USER=${BLUE}${PS_USER}${NORMAL}
+PS_HOST=${GREEN}${PS_HOST}${NORMAL}
+
+
+# dash still can't see when multi-line commands are deleted
+PS1='${PS_SHELL} ${PS_USER}@${PS_HOST}:${CYAN}${PWD}${NORMAL}'
+
+if [ -n "$SSH_SESSION" ]; then
+  PS1='${PS_SSH} '${PS1}
+fi
+if [ -f /.dockerenv ]; then
+  PS1='${PS_DOCKER} '${PS1}
+fi
+
+
+# Append git branch, if git is present on the system
+`git --version` > /dev/null
+GIT_BOOL=$?
+
+if [ $GIT_BOOL -eq 0 ]; then
+  PS_GIT='$(git_branch)'
+  PS_GIT=${YELLOW}${PS_GIT}${NORMAL}
+  PS1=${PS1}" ${PS_GIT}"
+fi
+PS1=${PS1}'$ '
+#export PS1

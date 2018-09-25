@@ -1,0 +1,8 @@
+*.txt
+*.backup
+.private/
+.bashrc*
+*_suffix
+.test*
+*existing
+linked.txt

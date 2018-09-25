@@ -1,0 +1,45 @@
+#!/bin/bash
+
+# PS1 builder
+# Note $PWD must be done literally, as it is evaluated (potentially differently) after every command
+PS1_VARIABLES=($PS_SHELL " " $PS_USER "@" $PS_HOST ":" '$PWD')
+PS1_FORMATTING=($RED $NORMAL $BLUE $NORMAL $GREEN $NORMAL $CYAN)
+
+# Prepend ssh if in use
+if [ -n "$SSH_SESSION" ]; then
+  PS1_VARIABLES=($PS_SSH " " "${PS1_VARIABLES[@]}")
+  PS1_FORMATTING=($UNDERLINE $NORMAL "${PS1_FORMATTING[@]}")
+fi
+
+# Prepend docker if in container
+if [ -f /.dockerenv ]; then
+  PS1_VARIABLES=($PS_DOCKER " " "${PS1_VARIABLES[@]}")
+  PS1_FORMATTING=($MAGENTA $NORMAL "${PS1_FORMATTING[@]}")
+fi
+
+# Append git branch, if git is present on the system
+`git --version` > /dev/null
+GIT_BOOL=$?
+
+if [ $GIT_BOOL -eq 0 ]; then
+  GIT_PS1='$(git_branch)'
+  PS1_VARIABLES=("${PS1_VARIABLES[@]}" " $GIT_PS1")
+  PS1_FORMATTING=("${PS1_FORMATTING[@]}" $YELLOW )
+fi
+
+# Append final character, # for root, $ else
+if [ $PS_USER == 'root' ]; then
+  PS1_VARIABLES=("${PS1_VARIABLES[@]}" "# ")
+else
+  PS1_VARIABLES=("${PS1_VARIABLES[@]}" "$ ")
+fi
+PS1_FORMATTING=("${PS1_FORMATTING[@]}" $NORMAL )
+
+PS1=''
+
+for ((i=0; i<${#PS1_VARIABLES[@]}; i+=1)); do
+  PS1=$PS1"\[${PS1_FORMATTING[i]}\]${PS1_VARIABLES[i]}\[${NORMAL}\]"
+done
+
+#PS1='\[${RED}\]${PS_SHELL}\[${NORMAL}\] \[${BLUE}\]${PS_USER}\[${NORMAL}\]@\[${GREEN}\]${PS_HOST}\[${NORMAL}\]:\[${CYAN}\]${PWD}\[${NORMAL}\]$ '
+

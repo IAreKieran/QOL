@@ -1,0 +1,12 @@
+# Bash-specifc key bindings (not global)
+
+# Remove ~ from F-keys
+"\e[": skip-csi-sequence       2>/dev/null
+
+# Custom
+#"\e[18~": 'cmus-remote --pause\C-m' # 2>/dev/null        #F7
+"\e[18~": 'cmus-remote --pause\C-m'  2>/dev/null        #F7
+#bind -x '"\e[18~": "cmus-remote --pause"' #"\C-m""'" # 2>/dev/null         #F7
+
+#F9="\e[20~"
+#"$F9": 'echo tripletest\n'      2>/dev/null # not working dynamically

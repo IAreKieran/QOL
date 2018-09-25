@@ -1,0 +1,8 @@
+FROM alpine
+
+RUN apk update && apk add bash git nano
+
+RUN mkdir -p /root/projects/QOL
+WORKDIR /root/projects/QOL
+
+ENTRYPOINT "sh" "-c" "/root/projects/QOL/QOL_BASH/init.sh && tail /dev/null -f"

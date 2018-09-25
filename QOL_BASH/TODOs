@@ -1,0 +1,22 @@
+TODOs
+
+python docker tests for init functionality
+make uninstaller
+automate shell & bash PS1 formatting variables (maybe add extra shell testing before this one)
+make nicer method to set shell variables (early in rc) based on (non)interactive (non)login etc (e.g exporting QOL_BASH_DIR, $ENV etc)
+Make method to generate QOL.init based on shell choices
+Unset all unneeded variables from init.sh and functions
+
+ls ~/test/.bash_functions /.testrc ~/.gitrc ~/.bashrc ~/.bashrc_suffix -lah
+
+Make QOL_sed which uses --posix or not
+maybe generalise to other programs that common to each user but work differently on different shells
+
+
+Make something that goes through QOL.init, confirming that all files have been linked correctly after install
+
+
+Shell status:-
+Full tested support on ash, dash, bash, ksh93
+
+Installs on csh, tcsh, zsh - no PS1 support
